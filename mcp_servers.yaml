@@ -1,0 +1,64 @@
+# ============================================================================
+# MCP Servers Configuration
+# ============================================================================
+# Add, remove, or modify MCP servers below.
+# The existing defaults are included — uncomment or add your own.
+#
+# Supported types:
+#   - "http"  : for SSE/HTTP-based MCP servers (needs "url")
+#   - "stdio" : for local process MCP servers (needs "command" and "args")
+#
+# Optional fields:
+#   - env: dictionary of environment variables passed to stdio servers
+#          Use ${VAR_NAME} to reference system environment variables.
+# ============================================================================
+
+# --- Default MCP Servers (shipped with the project) ------------------------
+
+huggingface:
+  type: "http"
+  url: "https://hf.co/mcp"
+
+microsoft-docs:
+  type: "http"
+  url: "https://learn.microsoft.com/api/mcp"
+
+kustoMCP:
+  type: "stdio"
+  command: "npx"
+  args: ["-y", "@mcp-apps/kusto-mcp-server"]
+
+adoMCP:
+  type: "stdio"
+  command: "npx"
+  args: ["@mcp-apps/azure-devops-mcp-server"]
+
+DiscoveryMCP:
+  type: "http"
+  url: "http://localhost:8000/mcp"
+
+# --- Add your own MCP servers below ----------------------------------------
+# Examples:
+#
+# github:
+#   type: "stdio"
+#   command: "npx"
+#   args: ["-y", "@modelcontextprotocol/server-github"]
+#   env:
+#     GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_TOKEN}"
+#
+# postgres:
+#   type: "stdio"
+#   command: "npx"
+#   args: ["-y", "@modelcontextprotocol/server-postgres", "${DATABASE_URL}"]
+#
+# jira:
+#   type: "http"
+#   url: "https://your-jira-mcp-server.example.com/mcp"
+#
+# gitlab:
+#   type: "stdio"
+#   command: "npx"
+#   args: ["-y", "@modelcontextprotocol/server-gitlab"]
+#   env:
+#     GITLAB_TOKEN: "${GITLAB_TOKEN}"
