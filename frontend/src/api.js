@@ -54,6 +54,19 @@ export async function deleteMcpServer(name) {
   return res.json();
 }
 
+// ---- History ----
+
+export async function fetchHistory() {
+  const res = await fetch(`${API_BASE}/history`);
+  return res.json();
+}
+
+export async function fetchTaskById(sessionId) {
+  const res = await fetch(`${API_BASE}/tasks/${sessionId}`);
+  if (!res.ok) throw new Error('Session not found');
+  return res.json();
+}
+
 // ---- Model config ----
 
 export async function fetchModelConfig() {

@@ -14,12 +14,9 @@ function agentClass(source) {
   return AGENT_CLASS_MAP[source] || 'system';
 }
 
-export default function TaskPanel() {
-  const [task, setTask] = useState('');
+export default function TaskPanel({ taskText, setTaskText, messages, setMessages, status, setStatus, setActiveSessionId }) {
   const [model, setModel] = useState('');
   const [maxIter, setMaxIter] = useState(30);
-  const [messages, setMessages] = useState([]);
-  const [status, setStatus] = useState('idle'); // idle | running | completed | error
   const [modelCfg, setModelCfg] = useState(null);
   const bottomRef = useRef(null);
 
@@ -27,24 +24,25 @@ export default function TaskPanel() {
   useEffect(() => {
     fetchModelConfig().then((cfg) => {
       setModelCfg(cfg);
-      if (cfg.default_model) setModel(cfg.default_model);
+      if (cfg.default_model && !model) setModel(cfg.default_model);
     });
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   async function handleRun() {
-    if (!task.trim() || status === 'running') return;
+    if (!taskText.trim() || status === 'running') return;
 
     setMessages([]);
     setStatus('running');
 
     try {
       const azureEp = modelCfg?.is_azure ? modelCfg.azure_endpoint : '';
-      const azureVer = modelCfg?.azure_api_version || '2025-04-01-preview';
-      const { session_id } = await createTask(task, model, maxIter, azureEp, azureVer);
+      const azureVer = modelCfg?.azure_api_version || '2024-12-01-preview';
+      const { session_id } = await createTask(taskText, model, maxIter, azureEp, azureVer);
+      setActiveSessionId(session_id);
       streamTask(
         session_id,
         (msg) => setMessages((prev) => [...prev, msg]),
@@ -78,8 +76,8 @@ export default function TaskPanel() {
         <div className="task-input-area">
           <textarea
             placeholder={`Example:\n1. ArchitectAgent: Design a REST API for user management\n2. DeveloperAgent: Implement with FastAPI\n3. SecurityAgent: Audit for OWASP Top 10\n4. CodeReviewerAgent: Final quality review\n\nWhen complete, respond with TASK_COMPLETE.`}
-            value={task}
-            onChange={(e) => setTask(e.target.value)}
+            value={taskText}
+            onChange={(e) => setTaskText(e.target.value)}
             disabled={status === 'running'}
           />
           <div className="task-controls">
@@ -102,7 +100,7 @@ export default function TaskPanel() {
                 disabled={status === 'running'}
               />
             </label>
-            <button className="btn-primary" onClick={handleRun} disabled={!task.trim() || status === 'running'}>
+            <button className="btn-primary" onClick={handleRun} disabled={!taskText.trim() || status === 'running'}>
               {status === 'running' ? <><span className="spinner" /> Running…</> : 'Run Task'}
             </button>
             {status !== 'idle' && (

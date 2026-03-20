@@ -6,20 +6,24 @@ Users interact through the UI to:
   - Submit tasks
   - Stream real-time agent messages
   - Manage MCP server configurations
+  - Browse chat history (persisted in PostgreSQL)
 """
 
 import asyncio
 import json
 import os
 import uuid
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select, update
 
 from agentic_team.team import AgenticDevelopmentTeam
 from agentic_team.mcp_integration import (
@@ -28,6 +32,16 @@ from agentic_team.mcp_integration import (
     AGENT_MCP_MAPPING,
     _load_servers_from_yaml,
 )
+from backend.db import init_db, async_session, ChatSession, ChatMessage
+
+# ---------------------------------------------------------------------------
+# Lifespan — init DB on startup
+# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()
+    yield
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -36,7 +50,8 @@ from agentic_team.mcp_integration import (
 app = FastAPI(
     title="PradaAgent Backend",
     description="Backend API for the Agentic Development Team",
-    version="1.0.0",
+    version="1.1.0",
+    lifespan=lifespan,
 )
 
 ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
@@ -239,8 +254,9 @@ async def get_model_config():
 
 @app.post("/api/tasks")
 async def start_task(req: TaskRequest):
-    """Start a new task and return a session_id used for streaming."""
+    """Start a new task — persisted to DB."""
     session_id = uuid.uuid4().hex
+    # In-memory entry for the running stream
     _sessions[session_id] = {
         "status": "pending",
         "messages": [],
@@ -250,14 +266,22 @@ async def start_task(req: TaskRequest):
         "azure_endpoint": req.azure_endpoint or os.getenv("AZURE_OPENAI_ENDPOINT", ""),
         "azure_api_version": req.azure_api_version,
     }
+    # Persist to DB
+    async with async_session() as db:
+        db.add(ChatSession(
+            id=session_id,
+            task=req.task,
+            model_name=req.model_name,
+            max_iterations=req.max_iterations,
+            status="pending",
+        ))
+        await db.commit()
     return {"session_id": session_id}
 
 
 @app.get("/api/tasks/{session_id}/stream")
 async def stream_task(session_id: str):
-    """
-    SSE endpoint – starts the agent team and streams each message as an event.
-    """
+    """SSE endpoint – runs agents and streams + persists each message."""
     session = _sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -267,6 +291,7 @@ async def stream_task(session_id: str):
     session["status"] = "running"
 
     async def event_generator():
+        seq = 0
         azure_ep = session.get("azure_endpoint", "")
         team = AgenticDevelopmentTeam(
             model_name=session["model_name"],
@@ -274,55 +299,117 @@ async def stream_task(session_id: str):
             azure_endpoint=azure_ep if azure_ep else None,
             azure_api_version=session.get("azure_api_version", "2024-12-01-preview"),
         )
+
+        # Mark running in DB
+        async with async_session() as db:
+            await db.execute(
+                update(ChatSession).where(ChatSession.id == session_id).values(status="running")
+            )
+            await db.commit()
+
         try:
-            # Use run_stream to get each message
             stream = team.team.run_stream(task=session["task"])
             async for message in stream:
                 source = getattr(message, "source", "system")
                 content = getattr(message, "content", str(message))
                 msg_type = type(message).__name__
 
-                payload = {
-                    "source": source,
-                    "content": content,
-                    "type": msg_type,
-                }
+                payload = {"source": source, "content": content, "type": msg_type}
                 session["messages"].append(payload)
+                seq += 1
+
+                # Persist message
+                async with async_session() as db:
+                    db.add(ChatMessage(
+                        session_id=session_id, seq=seq,
+                        source=source, content=content if isinstance(content, str) else str(content),
+                        msg_type=msg_type,
+                    ))
+                    await db.commit()
+
                 yield f"data: {json.dumps(payload)}\n\n"
 
             session["status"] = "completed"
+            async with async_session() as db:
+                await db.execute(
+                    update(ChatSession).where(ChatSession.id == session_id).values(status="completed")
+                )
+                await db.commit()
             yield f"data: {json.dumps({'type': 'done', 'source': 'system', 'content': 'Task completed'})}\n\n"
 
         except Exception as exc:
             session["status"] = "error"
-            error_payload = {
-                "type": "error",
-                "source": "system",
-                "content": str(exc),
-            }
-            yield f"data: {json.dumps(error_payload)}\n\n"
+            async with async_session() as db:
+                await db.execute(
+                    update(ChatSession).where(ChatSession.id == session_id).values(status="error")
+                )
+                await db.commit()
+            yield f"data: {json.dumps({'type': 'error', 'source': 'system', 'content': str(exc)})}\n\n"
         finally:
             await team.close()
 
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
 @app.get("/api/tasks/{session_id}")
 async def get_task_status(session_id: str):
-    """Get the current status and collected messages for a task."""
+    """Get task status and messages — falls back to DB if not in memory."""
+    # Try in-memory first (active session)
     session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    if session:
+        return {
+            "session_id": session_id,
+            "status": session["status"],
+            "task": session["task"],
+            "message_count": len(session["messages"]),
+            "messages": session["messages"],
+        }
+    # Fall back to DB (historical)
+    async with async_session() as db:
+        result = await db.execute(select(ChatSession).where(ChatSession.id == session_id))
+        chat = result.scalar_one_or_none()
+        if not chat:
+            raise HTTPException(status_code=404, detail="Session not found")
+        msg_result = await db.execute(
+            select(ChatMessage).where(ChatMessage.session_id == session_id).order_by(ChatMessage.seq)
+        )
+        msgs = [{"source": m.source, "content": m.content, "type": m.msg_type} for m in msg_result.scalars()]
     return {
         "session_id": session_id,
-        "status": session["status"],
-        "message_count": len(session["messages"]),
-        "messages": session["messages"],
+        "status": chat.status,
+        "task": chat.task,
+        "model_name": chat.model_name,
+        "created_at": chat.created_at.isoformat() if chat.created_at else None,
+        "message_count": len(msgs),
+        "messages": msgs,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Chat history
+# ---------------------------------------------------------------------------
+
+@app.get("/api/history")
+async def list_history():
+    """List all past chat sessions (newest first)."""
+    async with async_session() as db:
+        result = await db.execute(
+            select(ChatSession).order_by(ChatSession.created_at.desc()).limit(50)
+        )
+        sessions = result.scalars().all()
+    return {
+        "sessions": [
+            {
+                "id": s.id,
+                "task": s.task[:120],
+                "status": s.status,
+                "model_name": s.model_name,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            }
+            for s in sessions
+        ]
     }

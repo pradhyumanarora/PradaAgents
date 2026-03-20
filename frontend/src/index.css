@@ -346,3 +346,48 @@ input:focus, textarea:focus, select:focus {
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* ---- Chat history (sidebar) ---- */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+.history-item:hover { background: var(--surface2); color: var(--text); }
+.history-item.active { background: var(--accent); color: #fff; }
+
+.history-status {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+.history-status.completed { background: var(--success); }
+.history-status.running   { background: var(--accent); animation: pulse 1s infinite; }
+.history-status.error     { background: var(--error); }
+.history-status.pending   { background: var(--warning); }
+
+.history-task {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
