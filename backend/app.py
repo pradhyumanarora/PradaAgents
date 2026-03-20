@@ -11,6 +11,7 @@ Users interact through the UI to:
 
 import asyncio
 import json
+import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -35,13 +36,35 @@ from agentic_team.mcp_integration import (
 from backend.db import init_db, async_session, ChatSession, ChatMessage
 
 # ---------------------------------------------------------------------------
+# Logging setup
+# ---------------------------------------------------------------------------
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("pradaagent")
+
+# ---------------------------------------------------------------------------
 # Lifespan — init DB on startup
 # ---------------------------------------------------------------------------
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Starting PradaAgent backend v1.1.0")
+    logger.info("Initializing database tables...")
     await init_db()
+    logger.info("Database ready")
+    azure_ep = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+    if azure_ep:
+        logger.info("Azure OpenAI configured: endpoint=%s  model=%s", azure_ep, os.getenv("OPENAI_MODEL", "gpt-5.3-chat"))
+    else:
+        logger.info("Using OpenAI (no Azure endpoint set)")
+    logger.info("Active MCP servers: %s", list(_read_yaml().keys()) if Path(MCP_YAML_PATH).exists() else "defaults")
     yield
+    logger.info("Shutting down PradaAgent backend")
 
 # ---------------------------------------------------------------------------
 # App setup
@@ -193,6 +216,7 @@ async def add_mcp_server(server: MCPServerInput):
 
     raw[server.name] = entry
     _write_yaml(raw)
+    logger.info("MCP server added: name=%s type=%s", server.name, server.server_type)
     return {"message": f"Server '{server.name}' added", "server": {"name": server.name, **entry}}
 
 
@@ -233,6 +257,7 @@ async def delete_mcp_server(name: str):
         raise HTTPException(status_code=404, detail=f"Server '{name}' not found")
     del raw[name]
     _write_yaml(raw)
+    logger.info("MCP server deleted: name=%s", name)
     return {"message": f"Server '{name}' deleted"}
 
 
@@ -276,6 +301,7 @@ async def start_task(req: TaskRequest):
             status="pending",
         ))
         await db.commit()
+    logger.info("Session created: id=%s model=%s max_iter=%d task_preview='%s'", session_id, req.model_name, req.max_iterations, req.task[:80])
     return {"session_id": session_id}
 
 
@@ -290,6 +316,7 @@ async def stream_task(session_id: str):
 
     session["status"] = "running"
     session["_cancel"] = False
+    logger.info("Stream started: session=%s", session_id)
 
     async def event_generator():
         seq = len(session["messages"])
@@ -309,15 +336,30 @@ async def stream_task(session_id: str):
             await db.commit()
 
         try:
+            prev_source = None
             stream = team.team.run_stream(task=session["task"])
             async for message in stream:
                 # Check for cancellation
                 if session.get("_cancel"):
+                    logger.info("Cancellation detected: session=%s after %d messages", session_id, seq)
                     break
 
                 source = getattr(message, "source", "system")
                 content = getattr(message, "content", str(message))
                 msg_type = type(message).__name__
+
+                # Log orchestrator / agent flow
+                if msg_type in ("GroupChatMessage", "StopMessage", "HandoffMessage"):
+                    logger.info("[ORCHESTRATOR] session=%s | event=%s from=%s", session_id, msg_type, source)
+                elif source != prev_source:
+                    if prev_source:
+                        logger.info("[AGENT TURN] session=%s | %s --> %s (selected by orchestrator)", session_id, prev_source, source)
+                    else:
+                        logger.info("[AGENT TURN] session=%s | First speaker: %s", session_id, source)
+                    prev_source = source
+
+                content_preview = (content[:150] + "...") if isinstance(content, str) and len(content) > 150 else content
+                logger.info("[MESSAGE #%d] session=%s | from=%s | type=%s | preview=%s", seq + 1, session_id, source, msg_type, content_preview)
 
                 payload = {"source": source, "content": content, "type": msg_type}
                 session["messages"].append(payload)
@@ -336,6 +378,7 @@ async def stream_task(session_id: str):
 
             final_status = "stopped" if session.get("_cancel") else "completed"
             session["status"] = final_status
+            logger.info("Stream ended: session=%s status=%s messages=%d", session_id, final_status, seq)
             async with async_session() as db:
                 await db.execute(
                     update(ChatSession).where(ChatSession.id == session_id).values(status=final_status)
@@ -345,6 +388,7 @@ async def stream_task(session_id: str):
 
         except Exception as exc:
             session["status"] = "error"
+            logger.error("Stream error: session=%s error=%s", session_id, exc, exc_info=True)
             async with async_session() as db:
                 await db.execute(
                     update(ChatSession).where(ChatSession.id == session_id).values(status="error")
@@ -353,6 +397,7 @@ async def stream_task(session_id: str):
             yield f"data: {json.dumps({'type': 'error', 'source': 'system', 'content': str(exc)})}\n\n"
         finally:
             await team.close()
+            logger.debug("Team resources cleaned up: session=%s", session_id)
 
     return StreamingResponse(
         event_generator(),
@@ -433,8 +478,8 @@ async def delete_chat(session_id: str):
         await db.execute(sql_delete(ChatMessage).where(ChatMessage.session_id == session_id))
         await db.execute(sql_delete(ChatSession).where(ChatSession.id == session_id))
         await db.commit()
-    # Remove from in-memory if present
     _sessions.pop(session_id, None)
+    logger.info("Session deleted: id=%s", session_id)
     return {"message": f"Session '{session_id}' deleted"}
 
 
@@ -451,6 +496,7 @@ async def stop_task(session_id: str):
     if session["status"] != "running":
         raise HTTPException(status_code=409, detail="Task is not running")
     session["_cancel"] = True
+    logger.info("Stop signal sent: session=%s", session_id)
     return {"message": "Stop signal sent"}
 
 
@@ -517,6 +563,7 @@ Continue working based on the above conversation history and the new instruction
         "azure_endpoint": azure_ep,
         "azure_api_version": azure_ver,
     }
+    logger.info("Follow-up created: new_session=%s parent=%s prev_messages=%d prompt_preview='%s'", new_id, session_id, len(prev_messages), req.prompt[:80])
 
     async with async_session() as db:
         db.add(ChatSession(
