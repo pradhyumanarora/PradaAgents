@@ -421,6 +421,23 @@ async def list_history():
     }
 
 
+@app.delete("/api/history/{session_id}")
+async def delete_chat(session_id: str):
+    """Delete a chat session and its messages."""
+    from sqlalchemy import delete as sql_delete
+    async with async_session() as db:
+        result = await db.execute(select(ChatSession).where(ChatSession.id == session_id))
+        chat = result.scalar_one_or_none()
+        if not chat:
+            raise HTTPException(status_code=404, detail="Session not found")
+        await db.execute(sql_delete(ChatMessage).where(ChatMessage.session_id == session_id))
+        await db.execute(sql_delete(ChatSession).where(ChatSession.id == session_id))
+        await db.commit()
+    # Remove from in-memory if present
+    _sessions.pop(session_id, None)
+    return {"message": f"Session '{session_id}' deleted"}
+
+
 # ---------------------------------------------------------------------------
 # Stop a running task
 # ---------------------------------------------------------------------------

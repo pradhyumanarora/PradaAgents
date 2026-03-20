@@ -389,20 +389,50 @@ input:focus, textarea:focus, select:focus {
 .history-item {
   display: flex;
   align-items: center;
-  gap: 8px;
   width: 100%;
+  background: transparent;
+  border-radius: 6px;
+  border: none;
+  gap: 0;
+}
+.history-item:hover { background: var(--surface2); }
+.history-item.active { background: var(--accent); }
+.history-item.active .history-task { color: #fff; }
+
+.history-item-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
   text-align: left;
   background: transparent;
   color: var(--text-secondary);
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: 6px 0 0 6px;
   border: none;
   cursor: pointer;
   font-size: 0.78rem;
   line-height: 1.3;
 }
-.history-item:hover { background: var(--surface2); color: var(--text); }
-.history-item.active { background: var(--accent); color: #fff; }
+.history-item.active .history-item-btn { color: #fff; }
+
+.history-delete {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 0 6px 6px 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.history-item:hover .history-delete { opacity: 1; }
+.history-delete:hover { color: var(--error); }
 
 .history-status {
   flex-shrink: 0;

@@ -14,7 +14,7 @@ function agentClass(source) {
   return AGENT_CLASS_MAP[source] || 'system';
 }
 
-export default function TaskPanel({ taskText, setTaskText, messages, setMessages, status, setStatus, setActiveSessionId }) {
+export default function TaskPanel({ taskText, setTaskText, messages, setMessages, status, setStatus, activeSessionId, setActiveSessionId }) {
   const [model, setModel] = useState('');
   const [maxIter, setMaxIter] = useState(30);
   const [modelCfg, setModelCfg] = useState(null);
@@ -22,6 +22,11 @@ export default function TaskPanel({ taskText, setTaskText, messages, setMessages
   const bottomRef = useRef(null);
   const evtSourceRef = useRef(null);
   const sessionIdRef = useRef(null);
+
+  // Keep sessionIdRef in sync with activeSessionId from parent
+  useEffect(() => {
+    sessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
 
   useEffect(() => {
     fetchModelConfig().then((cfg) => {

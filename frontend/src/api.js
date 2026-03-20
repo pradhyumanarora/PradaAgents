@@ -67,6 +67,15 @@ export async function fetchTaskById(sessionId) {
   return res.json();
 }
 
+export async function deleteChat(sessionId) {
+  const res = await fetch(`${API_BASE}/history/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || 'Failed to delete');
+  }
+  return res.json();
+}
+
 // ---- Model config ----
 
 export async function fetchModelConfig() {
