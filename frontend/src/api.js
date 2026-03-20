@@ -119,5 +119,23 @@ export function streamTask(sessionId, onMessage, onDone, onError) {
     evtSource.close();
   };
 
-  return evtSource;
+  return evtSource; // caller can call .close() to stop
+}
+
+export async function stopTask(sessionId) {
+  const res = await fetch(`${API_BASE}/tasks/${sessionId}/stop`, { method: 'POST' });
+  return res.json();
+}
+
+export async function followUpTask(sessionId, prompt) {
+  const res = await fetch(`${API_BASE}/tasks/${sessionId}/followup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || 'Failed to follow up');
+  }
+  return res.json();
 }

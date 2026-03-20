@@ -206,6 +206,7 @@ input:focus, textarea:focus, select:focus {
 .message.security  { border-left-color: var(--agent-security); }
 .message.pr        { border-left-color: var(--agent-pr); }
 .message.system    { border-left-color: var(--agent-system); }
+.message.user      { border-left-color: var(--accent); background: rgba(108,99,255,0.08); }
 .message.error     { border-left-color: var(--error); background: rgba(239,83,80,0.08); }
 
 .message-header {
@@ -215,12 +216,40 @@ input:focus, textarea:focus, select:focus {
   margin-bottom: 6px;
 }
 
+.collapsible-header {
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 0;
+}
+.collapsible-header:hover { opacity: 0.85; }
+
+.collapse-icon {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  width: 14px;
+  flex-shrink: 0;
+}
+
+.message-preview {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  margin-left: 4px;
+}
+
 .message-content {
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 0.88rem;
   line-height: 1.6;
   color: var(--text-secondary);
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 
 /* ---- Task input ---- */
@@ -307,6 +336,7 @@ input:focus, textarea:focus, select:focus {
 .status.pending::before   { background: var(--warning); }
 .status.running::before   { background: var(--accent); animation: pulse 1s infinite; }
 .status.completed::before { background: var(--success); }
+.status.stopped::before   { background: var(--warning); }
 .status.error::before     { background: var(--error); }
 
 @keyframes pulse {
@@ -382,6 +412,7 @@ input:focus, textarea:focus, select:focus {
   background: var(--text-secondary);
 }
 .history-status.completed { background: var(--success); }
+.history-status.stopped   { background: var(--warning); }
 .history-status.running   { background: var(--accent); animation: pulse 1s infinite; }
 .history-status.error     { background: var(--error); }
 .history-status.pending   { background: var(--warning); }
@@ -390,4 +421,24 @@ input:focus, textarea:focus, select:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---- Follow-up bar ---- */
+.follow-up-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  padding: 14px 18px;
+}
+
+.follow-up-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.follow-up-input {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 0.9rem;
 }

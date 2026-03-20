@@ -289,9 +289,10 @@ async def stream_task(session_id: str):
         raise HTTPException(status_code=409, detail="Task already running")
 
     session["status"] = "running"
+    session["_cancel"] = False
 
     async def event_generator():
-        seq = 0
+        seq = len(session["messages"])
         azure_ep = session.get("azure_endpoint", "")
         team = AgenticDevelopmentTeam(
             model_name=session["model_name"],
@@ -310,6 +311,10 @@ async def stream_task(session_id: str):
         try:
             stream = team.team.run_stream(task=session["task"])
             async for message in stream:
+                # Check for cancellation
+                if session.get("_cancel"):
+                    break
+
                 source = getattr(message, "source", "system")
                 content = getattr(message, "content", str(message))
                 msg_type = type(message).__name__
@@ -329,13 +334,14 @@ async def stream_task(session_id: str):
 
                 yield f"data: {json.dumps(payload)}\n\n"
 
-            session["status"] = "completed"
+            final_status = "stopped" if session.get("_cancel") else "completed"
+            session["status"] = final_status
             async with async_session() as db:
                 await db.execute(
-                    update(ChatSession).where(ChatSession.id == session_id).values(status="completed")
+                    update(ChatSession).where(ChatSession.id == session_id).values(status=final_status)
                 )
                 await db.commit()
-            yield f"data: {json.dumps({'type': 'done', 'source': 'system', 'content': 'Task completed'})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'source': 'system', 'content': 'Task ' + final_status})}\n\n"
 
         except Exception as exc:
             session["status"] = "error"
@@ -413,3 +419,104 @@ async def list_history():
             for s in sessions
         ]
     }
+
+
+# ---------------------------------------------------------------------------
+# Stop a running task
+# ---------------------------------------------------------------------------
+
+@app.post("/api/tasks/{session_id}/stop")
+async def stop_task(session_id: str):
+    """Signal a running task to stop."""
+    session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session["status"] != "running":
+        raise HTTPException(status_code=409, detail="Task is not running")
+    session["_cancel"] = True
+    return {"message": "Stop signal sent"}
+
+
+# ---------------------------------------------------------------------------
+# Follow-up: continue a session with a new prompt
+# ---------------------------------------------------------------------------
+
+class FollowUpRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=10000)
+
+
+@app.post("/api/tasks/{session_id}/followup")
+async def followup_task(session_id: str, req: FollowUpRequest):
+    """
+    Continue an existing session with a new user prompt.
+    Builds a combined task from the history + new prompt so agents have full context.
+    Returns a new session_id for the follow-up stream.
+    """
+    # Load history from memory or DB
+    session = _sessions.get(session_id)
+    if session:
+        prev_messages = session["messages"]
+        model_name = session["model_name"]
+        max_iter = session["max_iterations"]
+        azure_ep = session.get("azure_endpoint", "")
+        azure_ver = session.get("azure_api_version", "2024-12-01-preview")
+        original_task = session["task"]
+    else:
+        async with async_session() as db:
+            result = await db.execute(select(ChatSession).where(ChatSession.id == session_id))
+            chat = result.scalar_one_or_none()
+            if not chat:
+                raise HTTPException(status_code=404, detail="Session not found")
+            msg_result = await db.execute(
+                select(ChatMessage).where(ChatMessage.session_id == session_id).order_by(ChatMessage.seq)
+            )
+            prev_messages = [{"source": m.source, "content": m.content, "type": m.msg_type} for m in msg_result.scalars()]
+            model_name = chat.model_name
+            max_iter = chat.max_iterations
+            azure_ep = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+            azure_ver = os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+            original_task = chat.task
+
+    # Build combined task with conversation history summary
+    history_text = "\n".join(
+        f"[{m['source']}]: {m['content'][:500]}" for m in prev_messages if m.get("content")
+    )
+    combined_task = f"""## Previous conversation context:
+{history_text}
+
+## New instruction from the user:
+{req.prompt}
+
+Continue working based on the above conversation history and the new instruction. Do NOT repeat work already done."""
+
+    # Create new session for the follow-up
+    new_id = uuid.uuid4().hex
+    _sessions[new_id] = {
+        "status": "pending",
+        "messages": list(prev_messages),  # carry forward old messages
+        "task": combined_task,
+        "model_name": model_name,
+        "max_iterations": max_iter,
+        "azure_endpoint": azure_ep,
+        "azure_api_version": azure_ver,
+    }
+
+    async with async_session() as db:
+        db.add(ChatSession(
+            id=new_id,
+            task=f"[Follow-up] {req.prompt[:200]}",
+            model_name=model_name,
+            max_iterations=max_iter,
+            status="pending",
+        ))
+        # Persist carried-forward messages
+        for i, m in enumerate(prev_messages, 1):
+            db.add(ChatMessage(
+                session_id=new_id, seq=i,
+                source=m["source"],
+                content=m["content"] if isinstance(m["content"], str) else str(m["content"]),
+                msg_type=m.get("type", "TextMessage"),
+            ))
+        await db.commit()
+
+    return {"session_id": new_id}

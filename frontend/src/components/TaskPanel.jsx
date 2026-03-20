@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { createTask, streamTask, fetchModelConfig } from '../api';
+import { createTask, streamTask, stopTask, followUpTask, fetchModelConfig } from '../api';
 
 const AGENT_CLASS_MAP = {
   ArchitectAgent: 'architect',
@@ -18,9 +18,11 @@ export default function TaskPanel({ taskText, setTaskText, messages, setMessages
   const [model, setModel] = useState('');
   const [maxIter, setMaxIter] = useState(30);
   const [modelCfg, setModelCfg] = useState(null);
+  const [followUp, setFollowUp] = useState('');
   const bottomRef = useRef(null);
+  const evtSourceRef = useRef(null);
+  const sessionIdRef = useRef(null);
 
-  // Fetch backend model config on mount
   useEffect(() => {
     fetchModelConfig().then((cfg) => {
       setModelCfg(cfg);
@@ -32,30 +34,72 @@ export default function TaskPanel({ taskText, setTaskText, messages, setMessages
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Cleanup SSE on unmount
+  useEffect(() => {
+    return () => { evtSourceRef.current?.close(); };
+  }, []);
+
+  function startStream(sessionId) {
+    sessionIdRef.current = sessionId;
+    setActiveSessionId(sessionId);
+    evtSourceRef.current = streamTask(
+      sessionId,
+      (msg) => setMessages((prev) => [...prev, msg]),
+      () => { setStatus('completed'); evtSourceRef.current = null; },
+      (err) => {
+        setMessages((prev) => [...prev, { source: 'system', content: err.content || 'Error', type: 'error' }]);
+        setStatus('error');
+        evtSourceRef.current = null;
+      }
+    );
+  }
+
   async function handleRun() {
     if (!taskText.trim() || status === 'running') return;
-
     setMessages([]);
     setStatus('running');
-
     try {
       const azureEp = modelCfg?.is_azure ? modelCfg.azure_endpoint : '';
       const azureVer = modelCfg?.azure_api_version || '2024-12-01-preview';
       const { session_id } = await createTask(taskText, model, maxIter, azureEp, azureVer);
-      setActiveSessionId(session_id);
-      streamTask(
-        session_id,
-        (msg) => setMessages((prev) => [...prev, msg]),
-        () => setStatus('completed'),
-        (err) => {
-          setMessages((prev) => [...prev, { source: 'system', content: err.content || 'Error', type: 'error' }]);
-          setStatus('error');
-        }
-      );
+      startStream(session_id);
     } catch {
       setStatus('error');
     }
   }
+
+  async function handleStop() {
+    if (evtSourceRef.current) {
+      evtSourceRef.current.close();
+      evtSourceRef.current = null;
+    }
+    if (sessionIdRef.current) {
+      try { await stopTask(sessionIdRef.current); } catch { /* ignore */ }
+    }
+    setStatus('stopped');
+    setMessages((prev) => [...prev, { source: 'system', content: 'Stopped by user', type: 'system' }]);
+  }
+
+  async function handleFollowUp() {
+    if (!followUp.trim() || status === 'running') return;
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+
+    // Add user message to the chat
+    setMessages((prev) => [...prev, { source: 'user', content: followUp, type: 'UserMessage' }]);
+    const prompt = followUp;
+    setFollowUp('');
+    setStatus('running');
+
+    try {
+      const { session_id } = await followUpTask(sid, prompt);
+      startStream(session_id);
+    } catch {
+      setStatus('error');
+    }
+  }
+
+  const canFollowUp = (status === 'completed' || status === 'stopped' || status === 'error') && messages.length > 0;
 
   return (
     <div>
@@ -103,6 +147,9 @@ export default function TaskPanel({ taskText, setTaskText, messages, setMessages
             <button className="btn-primary" onClick={handleRun} disabled={!taskText.trim() || status === 'running'}>
               {status === 'running' ? <><span className="spinner" /> Running…</> : 'Run Task'}
             </button>
+            {status === 'running' && (
+              <button className="btn-danger" onClick={handleStop}>Stop</button>
+            )}
             {status !== 'idle' && (
               <span className={`status ${status}`}>
                 {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -118,22 +165,50 @@ export default function TaskPanel({ taskText, setTaskText, messages, setMessages
           <h3>Agent Conversation ({messages.length} messages)</h3>
           <div className="messages-container">
             {messages.map((msg, i) => (
-              <div key={i} className={`message ${msg.type === 'error' ? 'error' : agentClass(msg.source)}`}>
-                <div className="message-header">
-                  <span className={`agent-badge ${agentClass(msg.source)}`}>
-                    {msg.source}
-                  </span>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                    {msg.type}
-                  </span>
-                </div>
-                <div className="message-content">{msg.content}</div>
-              </div>
+              <CollapsibleMessage key={i} msg={msg} defaultOpen={false} />
             ))}
             <div ref={bottomRef} />
           </div>
         </div>
       )}
+
+      {/* Follow-up input */}
+      {canFollowUp && (
+        <div className="card follow-up-bar">
+          <div className="follow-up-row">
+            <input
+              className="follow-up-input"
+              placeholder="Send a follow-up prompt with full chat history…"
+              value={followUp}
+              onChange={(e) => setFollowUp(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleFollowUp(); } }}
+            />
+            <button className="btn-primary" onClick={handleFollowUp} disabled={!followUp.trim()}>
+              Send
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CollapsibleMessage({ msg, defaultOpen }) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  const cls = msg.type === 'error' ? 'error' : agentClass(msg.source);
+  const preview = typeof msg.content === 'string'
+    ? msg.content.slice(0, 120) + (msg.content.length > 120 ? '…' : '')
+    : '';
+
+  return (
+    <div className={`message ${cls}`}>
+      <div className="message-header collapsible-header" onClick={() => setOpen(!open)}>
+        <span className="collapse-icon">{open ? '▾' : '▸'}</span>
+        <span className={`agent-badge ${agentClass(msg.source)}`}>{msg.source}</span>
+        <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{msg.type}</span>
+        {!open && <span className="message-preview">{preview}</span>}
+      </div>
+      {open && <div className="message-content">{msg.content}</div>}
     </div>
   );
 }
