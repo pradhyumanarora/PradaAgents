@@ -1,10 +1,8 @@
 # Agentic Development Team
 
-A multi-agent AI team for software development using **AutoGen** framework with **MCP (Model Context Protocol)** integration.
+A multi-agent AI team for software development using **AutoGen** framework with **MCP (Model Context Protocol)** integration. Agents collaborate through intelligent routing to design, implement, review, and secure your code.
 
 ## 🏗️ Architecture
-
-The team consists of 5 specialized agents that work together:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -24,106 +22,71 @@ The team consists of 5 specialized agents that work together:
 │  ┌──────────────┐  ┌──────────────────────────────────────────┐ │
 │  │  Security    │  │         PR Review Agent                  │ │
 │  │    Agent     │  │                                          │ │
-│  │              │  │ • Azure DevOps MCP Integration           │ │
-│  │ • Vuln Scan  │  │ • Fetch & Resolve PR Comments            │ │
-│  │ • Secrets    │  │ • Manage Approvals                       │ │
-│  │ • OWASP      │  │ • Work Items                             │ │
+│  │              │  │ • Fetch & Resolve PR Comments             │ │
+│  │ • Vuln Scan  │  │ • Manage Approvals                       │ │
+│  │ • Secrets    │  │ • Work Items                              │ │
+│  │ • OWASP      │  │ • Code Review Coordination               │ │
 │  └──────────────┘  └──────────────────────────────────────────┘ │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
                               │
-                              ▼
-              ┌───────────────────────────────┐
-              │        MCP Servers            │
-              ├───────────────────────────────┤
-              │ • adoMCP (Azure DevOps)       │
-              │ • microsoft-docs              │
-              │ • huggingface                 │
-              │ • kustoMCP                    │
-              │ • DiscoveryMCP                │
-              └───────────────────────────────┘
+                    ┌─────────┴─────────┐
+                    ▼                   ▼
+         ┌──────────────────┐  ┌────────────────┐
+         │  MCP Servers     │  │  Your Custom   │
+         │  (built-in)      │  │  MCP Servers   │
+         │                  │  │                │
+         │ • huggingface    │  │ • github       │
+         │ • microsoft-docs │  │ • postgres     │
+         │ • kustoMCP       │  │ • jira         │
+         │ • adoMCP         │  │ • ...anything  │
+         │ • DiscoveryMCP   │  │                │
+         └──────────────────┘  └────────────────┘
+                    ▲
+         Configured via mcp_servers.yaml
 ```
+
+---
 
 ## 🚀 Quick Start
 
-### 1. Install Dependencies
+### 1. Clone & Install
 
 ```bash
+git clone https://github.com/pradhyumanarora/PradaAgents.git
+cd PradaAgents
 pip install -r requirements.txt
 ```
 
-### 2. Set Environment Variables
+### 2. Set Your OpenAI API Key
 
-```bash
+```powershell
 # Windows PowerShell
-$env:OPENAI_API_KEY = "your-api-key"
+$env:OPENAI_API_KEY = "sk-..."
 
-# Or copy and edit .env.example
-cp .env.example .env
+# Linux / macOS
+export OPENAI_API_KEY="sk-..."
 ```
 
-### 3. Run the Team
+### 3. (Optional) Configure MCP Servers
+
+Edit `mcp_servers.yaml` to add, remove, or change MCP servers. See [Configuring MCP Servers](#-configuring-mcp-servers) below.
+
+### 4. Run
 
 ```bash
 python main.py
 ```
 
-## 📦 Project Structure
+That's it. The agents will collaborate to complete the task defined in `main.py`.
 
-```
-PradaAgent/
-├── main.py                    # Entry point
-├── requirements.txt           # Dependencies
-├── .env.example              # Environment template
-├── README.md                 # This file
-│
-└── agentic_team/
-    ├── __init__.py
-    ├── config.py             # Configuration classes
-    ├── team.py               # Main team orchestration
-    ├── mcp_integration.py    # MCP server utilities
-    │
-    ├── agents/
-    │   ├── __init__.py
-    │   ├── architect_agent.py
-    │   ├── developer_agent.py
-    │   ├── code_reviewer_agent.py
-    │   ├── security_agent.py
-    │   └── pr_review_agent.py
-    │
-    └── tools/                # (Optional custom tools)
-        ├── __init__.py
-        ├── code_tools.py
-        ├── security_tools.py
-        └── ado_tools.py
-```
+---
 
-## 🔧 MCP Integration
+## 📖 How to Build a Project with PradaAgents
 
-The agents leverage MCP servers configured in VS Code:
+### Step 1 — Write a Task
 
-| Server | Purpose | Used By |
-|--------|---------|---------|
-| `adoMCP` | Azure DevOps operations | PRReviewAgent |
-| `microsoft-docs` | Documentation search | All Agents |
-| `huggingface` | ML model/dataset search | Architect, Developer |
-| `kustoMCP` | Database queries | Developer |
-| `DiscoveryMCP` | Custom discovery | All Agents |
-
-### Available ADO MCP Tools
-
-The PR Review Agent can use these Azure DevOps tools:
-
-- `mcp_adomcp_list-build-runs` - List build runs
-- `mcp_adomcp_list-release-runs` - List releases  
-- `mcp_adomcp_update-work-item` - Update work items
-- `mcp_adomcp_git-commit-changes` - Commit changes
-- `activate_pull_request_analysis_tools` - Analyze PRs
-- `activate_git_repository_management_tools` - Repo management
-
-## 🎯 Usage Examples
-
-### Example 1: Full Development Workflow
+The agents are driven by a natural-language **task description**. Be specific about what you want each agent to do:
 
 ```python
 import asyncio
@@ -131,101 +94,281 @@ from agentic_team.team import AgenticDevelopmentTeam
 
 async def main():
     team = AgenticDevelopmentTeam(model_name="gpt-4o")
-    
+
     task = """
-    Design and implement a REST API endpoint for user registration.
-    Include input validation, password hashing, and proper error handling.
-    Review for security vulnerabilities before completion.
+    Build a REST API for a todo-list app.
+
+    1. **ArchitectAgent**: Design the API — define endpoints, data model,
+       and technology stack (FastAPI + SQLite).
+
+    2. **DeveloperAgent**: Implement the endpoints:
+       - POST /todos, GET /todos, PUT /todos/{id}, DELETE /todos/{id}
+       - Include input validation and error handling.
+
+    3. **SecurityAgent**: Review the implementation for vulnerabilities
+       (injection, auth issues, data exposure).
+
+    4. **CodeReviewerAgent**: Review code quality, suggest improvements.
+
+    When all steps are complete, respond with TASK_COMPLETE.
     """
-    
-    await team.run(task)
-    await team.close()
+
+    try:
+        result = await team.run(task)
+        print(f"Messages exchanged: {len(result.messages)}")
+    finally:
+        await team.close()
 
 asyncio.run(main())
 ```
 
-### Example 2: PR Review Workflow
+### Step 2 — Understand Agent Routing
+
+The team uses **SelectorGroupChat** — an LLM picks the best agent for each turn based on conversation context. You can influence routing by:
+
+- **Mentioning agent names** in the task (e.g. "ArchitectAgent: design...")
+- **Using keywords** that map to agents (e.g. "security" → SecurityAgent)
+- **Ordering your instructions** — the first agent mentioned tends to go first
+
+### Step 3 — Customize for Your Workflow
+
+**Change the model:**
+```python
+team = AgenticDevelopmentTeam(model_name="gpt-4o-mini")
+```
+
+**Change max iterations:**
+```python
+team = AgenticDevelopmentTeam(model_name="gpt-4o", max_iterations=40)
+```
+
+**Use keyword-based routing** (deterministic instead of LLM-based):
+```python
+result = await team.run_with_custom_selector(task)
+```
+
+### Step 4 — Run & Iterate
+
+```bash
+python main.py
+```
+
+Watch the agents collaborate in your terminal. Each agent's output is labeled with its name. The conversation ends when an agent says `TASK_COMPLETE`, `TERMINATE`, or the max iteration limit is reached.
+
+---
+
+## 🔧 Configuring MCP Servers
+
+MCP servers give agents access to external tools (Azure DevOps, GitHub, databases, docs, etc.). Configuration lives in **`mcp_servers.yaml`** at the project root.
+
+### Default Servers (included)
+
+| Server | Type | Purpose |
+|--------|------|---------|
+| `huggingface` | HTTP | ML model & dataset search |
+| `microsoft-docs` | HTTP | Microsoft documentation |
+| `kustoMCP` | stdio | Kusto database queries |
+| `adoMCP` | stdio | Azure DevOps (PRs, work items, repos) |
+| `DiscoveryMCP` | HTTP | Custom discovery service |
+
+### Adding Your Own
+
+Edit `mcp_servers.yaml` and add entries:
+
+```yaml
+# HTTP server — just needs a URL
+github:
+  type: "http"
+  url: "https://api.github.com/mcp"
+
+# stdio server — runs a local process
+postgres:
+  type: "stdio"
+  command: "npx"
+  args: ["-y", "@modelcontextprotocol/server-postgres", "${DATABASE_URL}"]
+
+# With environment variables (use ${VAR} syntax)
+gitlab:
+  type: "stdio"
+  command: "npx"
+  args: ["-y", "@modelcontextprotocol/server-gitlab"]
+  env:
+    GITLAB_TOKEN: "${GITLAB_TOKEN}"
+```
+
+### Removing Servers You Don't Need
+
+Just delete or comment out the entry in `mcp_servers.yaml`:
+
+```yaml
+# Don't use Kusto? Comment it out:
+# kustoMCP:
+#   type: "stdio"
+#   command: "npx"
+#   args: ["-y", "@mcp-apps/kusto-mcp-server"]
+```
+
+### Using a Custom Config Path
+
+```bash
+# Point to a different config file
+$env:MCP_SERVERS_CONFIG = "C:\path\to\my_servers.yaml"
+python main.py
+```
+
+If `mcp_servers.yaml` doesn't exist and no env var is set, the built-in defaults are used automatically.
+
+### Agent → Server Mapping
+
+Which agents can use which MCP servers is defined in `agentic_team/mcp_integration.py` via `AGENT_MCP_MAPPING`:
+
+| Agent | MCP Servers |
+|-------|-------------|
+| ArchitectAgent | microsoft-docs, huggingface |
+| DeveloperAgent | microsoft-docs, kustoMCP |
+| CodeReviewerAgent | microsoft-docs |
+| SecurityAgent | microsoft-docs |
+| PRReviewAgent | adoMCP |
+
+To change this, edit the `AGENT_MCP_MAPPING` dict in `mcp_integration.py`.
+
+---
+
+## 🎯 Example Projects
+
+### Build a Feature (End-to-End)
 
 ```python
 task = """
-Use Azure DevOps MCP to:
-1. Get details of PR #123 in project 'MyProject'
-2. List all active comments
-3. Analyze the code changes for issues
-4. Suggest resolutions for reviewer feedback
-5. Mark comments as resolved when addressed
+Design and implement a user authentication system with JWT tokens.
+
+1. ArchitectAgent: Design auth architecture (login, signup, token refresh)
+2. DeveloperAgent: Implement with FastAPI + python-jose + passlib
+3. SecurityAgent: Audit for OWASP Top 10 vulnerabilities
+4. CodeReviewerAgent: Final code quality review
+
+When complete, respond with TASK_COMPLETE.
 """
 ```
 
-### Example 3: Security Audit
+### PR Review Workflow
 
 ```python
 task = """
-Perform a security audit of the authentication module:
-1. Scan for hardcoded secrets
-2. Check for SQL injection vulnerabilities
-3. Review password handling
-4. Verify session management
-Provide a detailed security report.
+Review pull request #42 in our Azure DevOps project.
+
+1. PRReviewAgent: Fetch PR details and list all comments
+2. CodeReviewerAgent: Analyze the feedback and prioritize issues
+3. SecurityAgent: Check for security-related concerns
+4. DeveloperAgent: Implement fixes for the review comments
+5. PRReviewAgent: Resolve comments and prepare for approval
+
+When complete, respond with TASK_COMPLETE.
 """
 ```
 
-## 🤖 Agent Descriptions
-
-### ArchitectAgent
-- Designs system architecture and components
-- Recommends design patterns (SOLID, DDD, etc.)
-- Creates technical specifications
-- Defines interfaces and data models
-
-### DeveloperAgent  
-- Implements features based on specs
-- Writes clean, testable code
-- Creates unit and integration tests
-- Follows coding standards
-
-### CodeReviewerAgent
-- Performs thorough code reviews
-- Identifies bugs and code smells
-- Suggests improvements
-- Verifies coding standards
-
-### SecurityAgent
-- Scans for vulnerabilities (OWASP Top 10)
-- Detects exposed secrets
-- Reviews authentication/authorization
-- Provides security recommendations
-
-### PRReviewAgent
-- Manages Azure DevOps pull requests
-- Fetches and categorizes PR comments
-- Coordinates issue resolution
-- Handles PR approval workflow
-
-## ⚙️ Configuration
-
-Edit `agentic_team/config.py` or use environment variables:
+### Security Audit
 
 ```python
-# In code
+task = """
+Perform a full security audit of the authentication module:
+1. Scan for hardcoded secrets and credentials
+2. Check for SQL injection and XSS vulnerabilities
+3. Review password hashing and session management
+4. Verify OWASP Top 10 compliance
+Provide a detailed security report with risk levels.
+
+When complete, respond with TASK_COMPLETE.
+"""
+```
+
+### Architecture Review
+
+```python
+task = """
+Review the current microservices architecture:
+1. ArchitectAgent: Analyze the component design and identify issues
+2. SecurityAgent: Check for insecure communication patterns
+3. CodeReviewerAgent: Review for maintainability and coupling
+
+When complete, respond with TASK_COMPLETE.
+"""
+```
+
+---
+
+## 📦 Project Structure
+
+```
+PradaAgents/
+├── main.py                    # Entry point — edit your task here
+├── mcp_servers.yaml           # MCP server configuration (customizable)
+├── requirements.txt           # Python dependencies
+├── .env.example               # Environment variable template
+├── .gitignore
+├── README.md
+│
+└── agentic_team/
+    ├── __init__.py
+    ├── config.py              # Model & team configuration
+    ├── team.py                # Team orchestration (SelectorGroupChat)
+    ├── mcp_integration.py     # MCP server loading & agent mapping
+    │
+    └── agents/
+        ├── __init__.py
+        ├── architect_agent.py     # System design & architecture
+        ├── developer_agent.py     # Code implementation
+        ├── code_reviewer_agent.py # Code quality review
+        ├── security_agent.py      # Security analysis
+        └── pr_review_agent.py     # PR management
+```
+
+---
+
+## 🤖 Agent Reference
+
+| Agent | Role | Triggered By |
+|-------|------|-------------|
+| **ArchitectAgent** | System design, patterns, specs, interfaces | "design", "architect", "structure", "component" |
+| **DeveloperAgent** | Code implementation, tests, documentation | "implement", "write code", "create file", "fix bug" |
+| **CodeReviewerAgent** | Code review, quality checks, best practices | "review", "check", "analyze code", "code quality" |
+| **SecurityAgent** | Vulnerability scanning, secrets detection, OWASP | "security", "vulnerability", "secret", "credential" |
+| **PRReviewAgent** | PR comments, approvals, Azure DevOps workflow | "pr", "pull request", "comment", "resolve" |
+
+---
+
+## ⚙️ Configuration Reference
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENAI_API_KEY` | — | **Required.** Your OpenAI API key |
+| `OPENAI_MODEL` | `gpt-4o` | Model to use |
+| `MODEL_TEMPERATURE` | `0.7` | Response creativity (0.0–1.0) |
+| `MODEL_MAX_TOKENS` | `4096` | Max tokens per response |
+| `TEAM_MAX_ITERATIONS` | `25` | Max messages before stopping |
+| `MCP_SERVERS_CONFIG` | `mcp_servers.yaml` | Path to custom MCP config |
+
+### Programmatic Configuration
+
+```python
+from agentic_team.team import AgenticDevelopmentTeam
+
 team = AgenticDevelopmentTeam(
-    model_name="gpt-4o",
-    max_iterations=25,
+    model_name="gpt-4o",       # or "gpt-4o-mini" for lower cost
+    api_key="sk-...",          # or use OPENAI_API_KEY env var
+    max_iterations=30,
 )
 ```
 
-```bash
-# Environment variables
-OPENAI_MODEL=gpt-4o
-TEAM_MAX_ITERATIONS=25
-ADO_ORGANIZATION_URL=https://dev.azure.com/myorg
-ADO_PROJECT_NAME=MyProject
-```
+---
 
-## 📚 Documentation
+## 📚 Resources
 
 - [AutoGen Documentation](https://microsoft.github.io/autogen/stable/)
 - [MCP Protocol](https://modelcontextprotocol.io/)
+- [MCP Server Registry](https://github.com/modelcontextprotocol/servers)
 - [Azure DevOps REST API](https://learn.microsoft.com/en-us/rest/api/azure/devops/)
 
 ## 🤝 Contributing
@@ -233,7 +376,7 @@ ADO_PROJECT_NAME=MyProject
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Run the team to test
+4. Test by running the team with a sample task
 5. Submit a pull request
 
 ## 📄 License
