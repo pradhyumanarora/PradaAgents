@@ -431,7 +431,7 @@ async def get_task_status(session_id: str):
         msgs = [{"source": m.source, "content": m.content, "type": m.msg_type} for m in msg_result.scalars()]
     return {
         "session_id": session_id,
-        "status": chat.status,
+        "status": chat.status if chat.status != "running" else "stopped",  # orphaned running = stopped
         "task": chat.task,
         "model_name": chat.model_name,
         "created_at": chat.created_at.isoformat() if chat.created_at else None,
@@ -457,7 +457,7 @@ async def list_history():
             {
                 "id": s.id,
                 "task": s.task[:120],
-                "status": s.status,
+                "status": s.status if s.status != "running" else "stopped",  # orphaned
                 "model_name": s.model_name,
                 "created_at": s.created_at.isoformat() if s.created_at else None,
             }
@@ -489,14 +489,21 @@ async def delete_chat(session_id: str):
 
 @app.post("/api/tasks/{session_id}/stop")
 async def stop_task(session_id: str):
-    """Signal a running task to stop."""
+    """Signal a running task to stop and immediately update DB."""
     session = _sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     if session["status"] != "running":
         raise HTTPException(status_code=409, detail="Task is not running")
     session["_cancel"] = True
-    logger.info("Stop signal sent: session=%s", session_id)
+    session["status"] = "stopped"
+    # Immediately persist to DB so refresh shows correct status
+    async with async_session() as db:
+        await db.execute(
+            update(ChatSession).where(ChatSession.id == session_id).values(status="stopped")
+        )
+        await db.commit()
+    logger.info("Stop signal sent + DB updated: session=%s", session_id)
     return {"message": "Stop signal sent"}
 
 

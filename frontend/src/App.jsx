@@ -41,7 +41,7 @@ export default function App() {
       const data = await fetchTaskById(id);
       setTaskText(data.task || '');
       setMessages(data.messages || []);
-      setStatus(data.status === 'running' ? 'running' : data.status === 'error' ? 'error' : 'completed');
+      setStatus(data.status === 'running' ? 'running' : data.status === 'stopped' ? 'stopped' : data.status === 'error' ? 'error' : 'completed');
       setActiveSessionId(id);
       setPage('task');
     } catch { /* ignore */ }
