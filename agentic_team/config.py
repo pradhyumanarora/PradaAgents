@@ -27,19 +27,28 @@ class AzureDevOpsConfig:
 @dataclass
 class ModelConfig:
     """Model configuration for agents."""
-    model_name: str = "gpt-4o"
+    model_name: str = "gpt-5.3-chat"
     api_key: Optional[str] = None
     temperature: float = 0.7
-    max_tokens: int = 4096
-    
+    max_tokens: int = 16384
+    # Azure OpenAI fields (set these to use Azure instead of OpenAI)
+    azure_endpoint: Optional[str] = None
+    azure_api_version: str = "2024-12-01-preview"
+
+    @property
+    def is_azure(self) -> bool:
+        return bool(self.azure_endpoint)
+
     @classmethod
     def from_env(cls) -> "ModelConfig":
         """Load configuration from environment variables."""
         return cls(
-            model_name=os.getenv("OPENAI_MODEL", "gpt-4o"),
-            api_key=os.getenv("OPENAI_API_KEY"),
+            model_name=os.getenv("OPENAI_MODEL", "gpt-5.3-chat"),
+            api_key=os.getenv("OPENAI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY"),
             temperature=float(os.getenv("MODEL_TEMPERATURE", "0.7")),
-            max_tokens=int(os.getenv("MODEL_MAX_TOKENS", "4096")),
+            max_tokens=int(os.getenv("MODEL_MAX_TOKENS", "16384")),
+            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+            azure_api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview"),
         )
 
 

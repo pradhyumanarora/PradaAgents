@@ -126,24 +126,50 @@ class AgenticDevelopmentTeam:
     
     def __init__(
         self,
-        model_name: str = "gpt-4o",
+        model_name: str = "gpt-5.3-chat",
         api_key: Optional[str] = None,
         max_iterations: int = 25,
+        azure_endpoint: Optional[str] = None,
+        azure_api_version: str = "2024-12-01-preview",
     ):
         """
         Initialize the Agentic Development Team.
         
         Args:
-            model_name: The OpenAI model to use
-            api_key: Optional API key (uses OPENAI_API_KEY env var if not provided)
+            model_name: The model deployment name
+            api_key: API key (uses env vars if not provided)
             max_iterations: Maximum number of message iterations
+            azure_endpoint: If set, use Azure OpenAI instead of OpenAI
+            azure_api_version: Azure OpenAI API version
         """
+        import os
+
+        # Resolve Azure settings from env if not passed directly
+        azure_endpoint = azure_endpoint or os.getenv("AZURE_OPENAI_ENDPOINT")
+        api_key = api_key or os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+
         # Create model client
-        client_kwargs = {"model": model_name}
-        if api_key:
-            client_kwargs["api_key"] = api_key
-        
-        self.model_client = OpenAIChatCompletionClient(**client_kwargs)
+        if azure_endpoint:
+            from autogen_ext.models.openai import AzureOpenAIChatCompletionClient
+            self.model_client = AzureOpenAIChatCompletionClient(
+                azure_deployment=model_name,
+                model=model_name,
+                azure_endpoint=azure_endpoint,
+                api_key=api_key,
+                api_version=azure_api_version,
+                model_info={
+                    "vision": True,
+                    "function_calling": True,
+                    "json_output": True,
+                    "family": "o1",
+                    "structured_output": True,
+                },
+            )
+        else:
+            client_kwargs = {"model": model_name}
+            if api_key:
+                client_kwargs["api_key"] = api_key
+            self.model_client = OpenAIChatCompletionClient(**client_kwargs)
         self.max_iterations = max_iterations
         
         # Create agents

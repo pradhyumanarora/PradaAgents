@@ -301,26 +301,104 @@ When complete, respond with TASK_COMPLETE.
 
 ```
 PradaAgents/
-├── main.py                    # Entry point — edit your task here
+├── main.py                    # CLI entry point — edit your task here
 ├── mcp_servers.yaml           # MCP server configuration (customizable)
 ├── requirements.txt           # Python dependencies
 ├── .env.example               # Environment variable template
+├── docker-compose.yml         # Docker Compose — run everything
+├── Dockerfile.backend         # Backend container (FastAPI + agents)
+├── Dockerfile.frontend        # Frontend container (React + Nginx)
+├── .dockerignore
 ├── .gitignore
 ├── README.md
 │
-└── agentic_team/
-    ├── __init__.py
-    ├── config.py              # Model & team configuration
-    ├── team.py                # Team orchestration (SelectorGroupChat)
-    ├── mcp_integration.py     # MCP server loading & agent mapping
-    │
-    └── agents/
-        ├── __init__.py
-        ├── architect_agent.py     # System design & architecture
-        ├── developer_agent.py     # Code implementation
-        ├── code_reviewer_agent.py # Code quality review
-        ├── security_agent.py      # Security analysis
-        └── pr_review_agent.py     # PR management
+├── agentic_team/              # Core agent framework
+│   ├── __init__.py
+│   ├── config.py              # Model & team configuration
+│   ├── team.py                # Team orchestration (SelectorGroupChat)
+│   ├── mcp_integration.py     # MCP server loading & agent mapping
+│   └── agents/
+│       ├── __init__.py
+│       ├── architect_agent.py
+│       ├── developer_agent.py
+│       ├── code_reviewer_agent.py
+│       ├── security_agent.py
+│       └── pr_review_agent.py
+│
+├── backend/                   # FastAPI backend (REST + SSE)
+│   ├── __init__.py
+│   ├── app.py                 # API endpoints
+│   └── requirements.txt
+│
+└── frontend/                  # React UI (Vite + Nginx)
+    ├── package.json
+    ├── vite.config.js
+    ├── index.html
+    ├── nginx.conf             # Nginx reverse-proxy config
+    └── src/
+        ├── main.jsx
+        ├── App.jsx
+        ├── index.css
+        ├── api.js             # API client
+        └── components/
+            ├── TaskPanel.jsx
+            ├── McpServersPanel.jsx
+            └── AgentsPanel.jsx
+```
+
+---
+
+## 🐳 Docker — Run the Full Stack
+
+### Prerequisites
+
+- Docker & Docker Compose installed
+- An OpenAI API key
+
+### Quick Start
+
+```bash
+# 1. Set your API key (or create a .env file)
+echo "OPENAI_API_KEY=sk-..." > .env
+
+# 2. Build and run both containers
+docker-compose up --build
+
+# 3. Open the UI
+#    http://localhost:3000
+```
+
+| Service  | Container               | Port | Description |
+|----------|-------------------------|------|-------------|
+| Backend  | `pradaagent-backend`    | 8080 | FastAPI API (agents + MCP CRUD) |
+| Frontend | `pradaagent-frontend`   | 3000 | React UI served by Nginx |
+
+### What the UI Exposes
+
+| Page | Feature |
+|------|---------|
+| **Run Task** | Write a task, pick a model, set max iterations, and stream real-time agent messages |
+| **MCP Servers** | Add / delete MCP server configurations (`mcp_servers.yaml` is updated live) |
+| **Agents** | View the five agents and their mapped MCP servers |
+
+### Backend API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/api/health` | Health check |
+| `GET`  | `/api/agents` | List agents & their MCP mappings |
+| `GET`  | `/api/mcp-servers` | List configured MCP servers |
+| `POST` | `/api/mcp-servers` | Add a new MCP server |
+| `PUT`  | `/api/mcp-servers/{name}` | Update an MCP server |
+| `DELETE` | `/api/mcp-servers/{name}` | Remove an MCP server |
+| `POST` | `/api/tasks` | Start a new task (returns session_id) |
+| `GET`  | `/api/tasks/{id}/stream` | SSE stream of agent messages |
+| `GET`  | `/api/tasks/{id}` | Get task status & messages |
+
+### Stopping
+
+```bash
+docker-compose down
 ```
 
 ---
